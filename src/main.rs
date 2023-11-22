@@ -1,111 +1,209 @@
+use rust_tdlib::client::tdlib_client::TdJson;
+use rust_tdlib::client::{
+    AuthStateHandlerProxy, ClientIdentifier, ClientState, ConsoleClientStateHandlerIdentified,
+};
 use rust_tdlib::types::{FormattedText, GetMe, MessageContent, TextEntity, TextEntityType};
 use rust_tdlib::{
     client::{Client, Worker},
     tdjson,
     types::{SetTdlibParameters, Update},
 };
+use std::error::Error;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::{env, fs};
 use std::sync::OnceLock;
+use std::{env, fs};
+use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+use tokio::sync::mpsc::Receiver;
+use tokio::task::JoinHandle;
 
-static CHAT_ID: OnceLock<i64> = OnceLock::new();
+static ACCOUNTS_DATA: OnceLock<HashMap<i32, AccountData>> = OnceLock::new();
+
+struct AccountData {
+    chat_id: i64,
+    directory: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct Config {
+    accounts: Vec<AccountSettings>,
+
+    tdlib_log_verbosity: Option<i32>,
+    tddb_dir: String,
+    api_id: i32,
+    api_hash: String,
+
+}
+
+#[derive(Deserialize, Debug)]
+struct AccountSettings {
+    phone: String,
+    file_path: String,
+}
 
 #[tokio::main]
-async fn main() {
-    tdjson::set_log_verbosity_level(
-        env::var("TDLIB_LOG_VERBOSITY")
-            .unwrap_or_else(|_| "1".to_string())
-            .parse()
-            .unwrap(),
-    );
+async fn main() -> Result<(), Box<dyn Error>> {
+    let f = std::fs::File::open("config.yml").expect("Could not open file.");
+    let config: Config = serde_yaml::from_reader(f).expect("Could not read values.");
+    tdjson::set_log_verbosity_level(config.tdlib_log_verbosity.unwrap_or(1));
     env_logger::init();
-    let tdlib_parameters = SetTdlibParameters::builder()
-        .database_directory("tddb")
-        .use_test_dc(false)
-        .api_id(env::var("API_ID").unwrap().parse::<i32>().unwrap())
-        .api_hash(env::var("API_HASH").unwrap())
-        .system_language_code("en")
-        .device_model("Desktop")
-        .system_version("Unknown")
-        .application_version(env!("CARGO_PKG_VERSION"))
-        .enable_storage_optimizer(true)
-        .build();
 
-    let (sender, mut receiver) = tokio::sync::mpsc::channel::<Box<Update>>(100);
-    let client = Client::builder()
-        .with_tdlib_parameters(tdlib_parameters)
-        .with_updates_sender(sender)
-        .build()
-        .unwrap();
+    let mut file = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .create(true)
+        .open(dir_path + "/telegram.md")?;
 
-    let dir_path = env::var("DIR_PATH").unwrap();
-    fs::create_dir_all(&dir_path).unwrap();
 
+    let (sender, receiver) = tokio::sync::mpsc::channel::<Box<Update>>(100);
+
+
+    for account in config.accounts.iter() {
+        let client = Client::builder()
+            .with_tdlib_parameters(SetTdlibParameters::builder()
+                .database_directory(&config.tddb_dir)
+                .use_test_dc(false)
+                .api_id(config.api_id)
+                .api_hash(config.api_hash.clone())
+                .system_language_code("en")
+                .device_model("Desktop")
+                .system_version("Unknown")
+                .application_version(env!("CARGO_PKG_VERSION"))
+                .enable_storage_optimizer(true)
+                .build())
+            .with_updates_sender(sender.clone())
+            .with_auth_state_channel(10)
+            .with_client_auth_state_handler(ConsoleClientStateHandlerIdentified::new(
+                ClientIdentifier::PhoneNumber(account.phone.clone()),
+            ))
+            .build()?;
+    }
+
+
+
+    let reader = create_updates_reader(receiver);
+
+    let mut worker = Worker::builder()
+        .with_auth_state_handler(AuthStateHandlerProxy::default())
+        .build()?;
+    let waiter = worker.start();
+
+    let client = worker.bind_client(client).await?;
+
+    wait_authorized(&client, &worker).await;
+
+    log::debug!("authorized");
+
+    let me = client.get_me(GetMe::builder().build()).await?;
+    log::debug!("authorized as: {:?}", me);
+    CHAT_ID.get_or_init(|| me.id());
+
+    tokio::select! {
+        _ = waiter => {log::warn!("worker stopped")}
+        _ = tokio::signal::ctrl_c() => {log::info!("ctrl-c received")}
+        res = reader => {
+            match res {
+                Ok(_) => {
+                    log::info!("reader stopped");
+                }
+                Err(err) => {
+                    log::error!("reader error: {}", err);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn wait_authorized(client: &Client<TdJson>, worker: &Worker<AuthStateHandlerProxy, TdJson>) {
+    loop {
+        match worker.wait_auth_state_change(&client).await {
+            Ok(res) => match res {
+                Ok(state) => match state {
+                    ClientState::Opened => {
+                        log::debug!("client authorized; can start interaction");
+                        break;
+                    }
+                    _ => {
+                        panic!("client not authorized: {:?}", state);
+                    }
+                },
+                Err((err, auth_state)) => {
+                    log::error!(
+                        "state: {:?}, error: {:?}",
+                        auth_state.authorization_state(),
+                        err
+                    );
+                    break;
+                }
+            },
+            Err(err) => {
+                panic!("cannot wait for auth state changes: {}", err);
+            }
+        }
+    }
+}
+
+fn create_updates_reader(
+    mut receiver: Receiver<Box<Update>>,
+) -> JoinHandle<Result<(), std::io::Error>> {
     tokio::spawn(async move {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .append(true)
-            .create(true)
-            .open(dir_path + "/telegram.md")
-            .unwrap();
 
         while let Some(message) = receiver.recv().await {
             match message.as_ref() {
                 Update::NewMessage(new_message) => {
-                    log::info!("New message: {:?}", new_message.message().content());
-                    match CHAT_ID.get() {
+                    match ACCOUNTS_DATA.get() {
                         None => {
-                            continue;
+                            log::debug!("accounts data is not set");
+                            continue
                         }
-                        Some(v) => {
-                            if &new_message.message().chat_id() != v {
-                                continue;
+                        Some(d) => {
+                            let client_id = new_message.client_id().unwrap_or(-1);
+                            match d.get(&client_id) {
+                                None => {
+                                    log::error!("client_id not found: {}", client_id);
+                                    continue
+                                }
+                                Some(data) => {
+                                    if &new_message.message().chat_id() != data.chat_id {
+                                        log::debug!("chat id is not equal: {}", v);
+                                        continue;
+                                    }
+                                    match parse_message_content(new_message.message().content()) {
+                                        Some(text) => {
+                                            file.write_all(format!("{}\n\n***\n\n", text).as_bytes())?;
+                                        }
+                                        None => {}
+                                    }
+                                }
                             }
                         }
                     }
-                    let text = parse_message_content(new_message.message().content());
-                    match text {
-                        Some(text) => {
-                            file.write_all(format!("{}\n", text).as_bytes()).unwrap();
-                        }
-                        None => {}
-                    }
+
                 }
                 _ => {}
             }
         }
-    });
-
-    // let auth_handler = ClientAuthStateHandler::new(rx);
-    let mut worker = Worker::builder().build().unwrap();
-    let waiter = worker.start();
-
-    let client = worker.bind_client(client).await.unwrap();
-    // tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-    let me = client.get_me(GetMe::builder().build()).await.unwrap();
-    CHAT_ID.get_or_init(|| me.id());
-    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-
-    worker.stop();
-    let _ = waiter.await;
+        Ok::<(), std::io::Error>(())
+    })
 }
 
 fn parse_message_content(content: &MessageContent) -> Option<String> {
     match content {
         MessageContent::MessageText(text) => return Some(parse_formatted_text(text.text())),
         MessageContent::MessageAnimation(message_animation) => {
-            return Some(parse_formatted_text(message_animation.caption()))
+            return Some(parse_formatted_text(message_animation.caption()));
         }
         MessageContent::MessageAudio(message_audio) => {
-            return Some(parse_formatted_text(message_audio.caption()))
+            return Some(parse_formatted_text(message_audio.caption()));
         }
         MessageContent::MessageDocument(message_document) => {
-            return Some(parse_formatted_text(message_document.caption()))
+            return Some(parse_formatted_text(message_document.caption()));
         }
         MessageContent::MessagePhoto(photo) => return Some(parse_formatted_text(photo.caption())),
         MessageContent::MessageVideo(message_video) => {
-            return Some(parse_formatted_text(message_video.caption()))
+            return Some(parse_formatted_text(message_video.caption()));
         }
 
         // probably needs to be supported
@@ -230,21 +328,18 @@ fn make_entities_stack(entities: &[TextEntity]) -> Vec<(usize, String)> {
     let mut stack = Vec::new();
     for entity in entities {
         let formatting = match entity.type_() {
-            TextEntityType::Bold(_) => Some(("<b>".to_string(), "</b>".to_string())),
-            TextEntityType::Code(_) => Some(("<code>".to_string(), "</code>".to_string())),
+            TextEntityType::Bold(_) => Some(("**".to_string(), "**".to_string())),
+            TextEntityType::Code(_) => Some(("`".to_string(), "`".to_string())),
             TextEntityType::Hashtag(_) => Some(("#".to_string(), "".to_string())),
             TextEntityType::Italic(_) => Some(("<i>".to_string(), "</i>".to_string())),
             TextEntityType::PhoneNumber(_) => Some(("<phone>".to_string(), "</phone>".to_string())),
-            TextEntityType::Pre(_) => Some(("<pre>".to_string(), "</pre>".to_string())),
+            TextEntityType::Pre(_) => Some(("```\n".to_string(), "\n```".to_string())),
             TextEntityType::PreCode(_) => {
                 Some(("<pre><code>".to_string(), "</code></pre>".to_string()))
             }
-            TextEntityType::Strikethrough(_) => {
-                Some(("<strike>".to_string(), "</strike>".to_string()))
-            }
+            TextEntityType::Strikethrough(_) => Some(("~~".to_string(), "~~".to_string())),
             TextEntityType::TextUrl(u) => {
-                let tag = format!(r#"<a href="{}">"#, u.url());
-                Some((tag, "</a>".to_string()))
+                Some(("[".to_string(), format!("]({})", u.url()).to_string()))
             }
             TextEntityType::Underline(_) => Some(("<u>".to_string(), "</u>".to_string())),
             TextEntityType::Url(_) => Some(("<a>".to_string(), "</a>".to_string())),
@@ -280,8 +375,8 @@ mod tests {
     fn test_parse_formatted_text() {
         let tests = vec![
             (
-              r#"{"@type": "formattedText", "text": "\uD83D\uDCB8 Налоги в Италии\n\nМы почти 3 месяца рожали этот гайд. Писали, потом переделывали заново. Брали консультации, редактировали снова и в итоге готовы отдать вам текущую обзорную версию основных налогов в Италии. Он не идеален, но уже пора выпустить и двинуться дальше.\n\nВ планах сделать еще несколько детальных гайдов. Более практичных и специализированных. Благо у нас появился человек, который активно занимается этим.\n\n\uD83D\uDD17 Гайд по налогам\n\nГайд написал совместно с нами Александр. Если у вас есть вопросы или желание что-то добавить, сотрудничать в этой области напишите ему.\n\nЖдём ваших предложений и замечаний, наша цель составить самый понятный и детальный гайд по налогам.\n\n\uD83D\uDCAC Обсудить можно в чате", "entities": [{"@type": "textEntity", "offset": 3, "length": 17, "type": {"@type": "textEntityTypeBold"}}, {"@type": "textEntity", "offset": 423, "length": 15, "type": {"@type": "textEntityTypeTextUrl", "url": "https://rutoitaly.ru/wiki/Imposte_e_tasse"}}, {"@type": "textEntity", "offset": 423, "length": 15, "type": {"@type": "textEntityTypeBold"}}, {"@type": "textEntity", "offset": 470, "length": 10, "type": {"@type": "textEntityTypeTextUrl", "url": "https://t.me/alx4039"}}, {"@type": "textEntity", "offset": 577, "length": 101, "type": {"@type": "textEntityTypeItalic"}}, {"@type": "textEntity", "offset": 678, "length": 2, "type": {"@type": "textEntityTypeCustomEmoji", "custom_emoji_id": "5443038326535759644"}}, {"@type": "textEntity", "offset": 681, "length": 21, "type": {"@type": "textEntityTypeTextUrl", "url": "https://t.me/rutoitalychat/13295/22683"}}, {"@type": "textEntity", "offset": 681, "length": 21, "type": {"@type": "textEntityTypeItalic"}}]}"#,
-              "   <b>Налоги в Италии\n\n</b>Мы почти 3 месяца рожали этот гайд. Писали, потом переделывали заново. Брали консультации, редактировали снова и в итоге готовы отдать вам текущую обзорную версию основных налогов в Италии. Он не идеален, но уже пора выпустить и двинуться дальше.\n\nВ планах сделать еще несколько детальных гайдов. Более практичных и специализированных. Благо у нас появился человек, который активно занимается этим.\n\n   <a href=\"https://rutoitaly.ru/wiki/Imposte_e_tasse\"><b>Гайд по налогам</a></b>\n\nГайд написал совместно с нами <a href=\"https://t.me/alx4039\">Александр.</a> Если у вас есть вопросы или желание что-то добавить, сотрудничать в этой области напишите ему.\n\n<i>Ждём ваших предложений и замечаний, наша цель составить самый понятный и детальный гайд по налогам.\n\n</i>   <a href=\"https://t.me/rutoitalychat/13295/22683\"><i>Обсудить можно в чате</a></i>"
+                r#"{"@type": "formattedText", "text": "\uD83D\uDCB8 Налоги в Италии\n\nМы почти 3 месяца рожали этот гайд. Писали, потом переделывали заново. Брали консультации, редактировали снова и в итоге готовы отдать вам текущую обзорную версию основных налогов в Италии. Он не идеален, но уже пора выпустить и двинуться дальше.\n\nВ планах сделать еще несколько детальных гайдов. Более практичных и специализированных. Благо у нас появился человек, который активно занимается этим.\n\n\uD83D\uDD17 Гайд по налогам\n\nГайд написал совместно с нами Александр. Если у вас есть вопросы или желание что-то добавить, сотрудничать в этой области напишите ему.\n\nЖдём ваших предложений и замечаний, наша цель составить самый понятный и детальный гайд по налогам.\n\n\uD83D\uDCAC Обсудить можно в чате", "entities": [{"@type": "textEntity", "offset": 3, "length": 17, "type": {"@type": "textEntityTypeBold"}}, {"@type": "textEntity", "offset": 423, "length": 15, "type": {"@type": "textEntityTypeTextUrl", "url": "https://rutoitaly.ru/wiki/Imposte_e_tasse"}}, {"@type": "textEntity", "offset": 423, "length": 15, "type": {"@type": "textEntityTypeBold"}}, {"@type": "textEntity", "offset": 470, "length": 10, "type": {"@type": "textEntityTypeTextUrl", "url": "https://t.me/alx4039"}}, {"@type": "textEntity", "offset": 577, "length": 101, "type": {"@type": "textEntityTypeItalic"}}, {"@type": "textEntity", "offset": 678, "length": 2, "type": {"@type": "textEntityTypeCustomEmoji", "custom_emoji_id": "5443038326535759644"}}, {"@type": "textEntity", "offset": 681, "length": 21, "type": {"@type": "textEntityTypeTextUrl", "url": "https://t.me/rutoitalychat/13295/22683"}}, {"@type": "textEntity", "offset": 681, "length": 21, "type": {"@type": "textEntityTypeItalic"}}]}"#,
+                "   <b>Налоги в Италии\n\n</b>Мы почти 3 месяца рожали этот гайд. Писали, потом переделывали заново. Брали консультации, редактировали снова и в итоге готовы отдать вам текущую обзорную версию основных налогов в Италии. Он не идеален, но уже пора выпустить и двинуться дальше.\n\nВ планах сделать еще несколько детальных гайдов. Более практичных и специализированных. Благо у нас появился человек, который активно занимается этим.\n\n   <a href=\"https://rutoitaly.ru/wiki/Imposte_e_tasse\"><b>Гайд по налогам</a></b>\n\nГайд написал совместно с нами <a href=\"https://t.me/alx4039\">Александр.</a> Если у вас есть вопросы или желание что-то добавить, сотрудничать в этой области напишите ему.\n\n<i>Ждём ваших предложений и замечаний, наша цель составить самый понятный и детальный гайд по налогам.\n\n</i>   <a href=\"https://t.me/rutoitalychat/13295/22683\"><i>Обсудить можно в чате</a></i>"
             ),
             (
                 r#"{"@type":"formattedText","@extra":"","text":"Изображение из пятидесяти линий.\nНаткнулся на скрипт, который генерирует такие изображения вот тут.\nЛожите рядом со скриптом png изображение 750х750 в градациях серого, в исходнике меняете имя файла на ваше и запускаете исходник с помощью processing. Сгенерированное изображение будет лежать в том же каталоге.","entities":[{"@type":"textEntity","@extra":"","offset":91,"length":7,"type":{"@type":"textEntityTypeTextUrl","@extra":"","url":"https://gist.github.com/u-ndefine/8e4bc21be4275f87fefe7b2a68487161"}},{"@type":"textEntity","@extra":"","offset":239,"length":10,"type":{"@type":"textEntityTypeTextUrl","@extra":"","url":"https://processing.org/download/"}}]}"#,
@@ -299,7 +394,7 @@ https://t.me/joinchat/IqlQqUGyZpI1-0Zu8ChAmA"#,
             ),
         ];
         for (json_data, expected) in tests {
-            let formatted_text = FormattedText::from_json(json_data).unwrap();
+            let formatted_text = FormattedText::from_json(json_data)?;
             let t = parse_formatted_text(&formatted_text);
             assert_eq!(t, expected);
         }
