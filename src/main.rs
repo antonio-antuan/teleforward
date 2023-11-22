@@ -400,7 +400,7 @@ https://t.me/joinchat/IqlQqUGyZpI1-0Zu8ChAmA"#,
             ),
         ];
         for (json_data, expected) in tests {
-            let formatted_text = FormattedText::from_json(json_data)?;
+            let formatted_text = FormattedText::from_json(json_data).expect("cannot parse json");
             let t = parse_formatted_text(&formatted_text);
             assert_eq!(t, expected);
         }
