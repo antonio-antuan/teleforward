@@ -2,27 +2,30 @@ use rust_tdlib::client::tdlib_client::TdJson;
 use rust_tdlib::client::{
     AuthStateHandlerProxy, ClientIdentifier, ClientState, ConsoleClientStateHandlerIdentified,
 };
+use rust_tdlib::types::RObject;
 use rust_tdlib::types::{FormattedText, GetMe, MessageContent, TextEntity, TextEntityType};
 use rust_tdlib::{
     client::{Client, Worker},
     tdjson,
     types::{SetTdlibParameters, Update},
 };
-use std::error::Error;
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::sync::OnceLock;
-use std::{env, fs};
+use serde::Deserialize;
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
+use std::env;
+use std::error::Error;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 static ACCOUNTS_DATA: OnceLock<HashMap<i32, AccountData>> = OnceLock::new();
 
+#[derive(Debug)]
 struct AccountData {
     chat_id: i64,
-    directory: String,
+    file: Arc<Mutex<File>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,7 +36,6 @@ struct Config {
     tddb_dir: String,
     api_id: i32,
     api_hash: String,
-
 }
 
 #[derive(Deserialize, Debug)]
@@ -44,44 +46,12 @@ struct AccountSettings {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let f = std::fs::File::open("config.yml").expect("Could not open file.");
+    let f = File::open("config.yml").expect("Could not open file.");
     let config: Config = serde_yaml::from_reader(f).expect("Could not read values.");
     tdjson::set_log_verbosity_level(config.tdlib_log_verbosity.unwrap_or(1));
     env_logger::init();
 
-    let mut file = OpenOptions::new()
-        .write(true)
-        .append(true)
-        .create(true)
-        .open(dir_path + "/telegram.md")?;
-
-
     let (sender, receiver) = tokio::sync::mpsc::channel::<Box<Update>>(100);
-
-
-    for account in config.accounts.iter() {
-        let client = Client::builder()
-            .with_tdlib_parameters(SetTdlibParameters::builder()
-                .database_directory(&config.tddb_dir)
-                .use_test_dc(false)
-                .api_id(config.api_id)
-                .api_hash(config.api_hash.clone())
-                .system_language_code("en")
-                .device_model("Desktop")
-                .system_version("Unknown")
-                .application_version(env!("CARGO_PKG_VERSION"))
-                .enable_storage_optimizer(true)
-                .build())
-            .with_updates_sender(sender.clone())
-            .with_auth_state_channel(10)
-            .with_client_auth_state_handler(ConsoleClientStateHandlerIdentified::new(
-                ClientIdentifier::PhoneNumber(account.phone.clone()),
-            ))
-            .build()?;
-    }
-
-
-
     let reader = create_updates_reader(receiver);
 
     let mut worker = Worker::builder()
@@ -89,15 +59,54 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .build()?;
     let waiter = worker.start();
 
-    let client = worker.bind_client(client).await?;
+    let mut accounts_data = HashMap::new();
 
-    wait_authorized(&client, &worker).await;
+    for account in config.accounts.iter() {
+        let client = Client::builder()
+            .with_tdlib_parameters(
+                SetTdlibParameters::builder()
+                    .database_directory(&config.tddb_dir)
+                    .use_test_dc(false)
+                    .api_id(config.api_id)
+                    .api_hash(config.api_hash.clone())
+                    .system_language_code("en")
+                    .device_model("Desktop")
+                    .system_version("Unknown")
+                    .application_version(env!("CARGO_PKG_VERSION"))
+                    .enable_storage_optimizer(true)
+                    .build(),
+            )
+            .with_updates_sender(sender.clone())
+            .with_auth_state_channel(10)
+            .with_client_auth_state_handler(ConsoleClientStateHandlerIdentified::new(
+                ClientIdentifier::PhoneNumber(account.phone.clone()),
+            ))
+            .build()?;
+        let client = worker.bind_client(client).await?;
+        wait_authorized(&client, &worker).await;
+        log::debug!("{} authorized", account.phone);
 
-    log::debug!("authorized");
+        let me = client.get_me(GetMe::builder().build()).await?;
+        log::debug!("authorized as: {:?}", me);
 
-    let me = client.get_me(GetMe::builder().build()).await?;
-    log::debug!("authorized as: {:?}", me);
-    CHAT_ID.get_or_init(|| me.id());
+        let file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open(account.file_path.as_str())?;
+
+        accounts_data.insert(
+            client.get_client_id().expect("client_id not set"),
+            AccountData {
+                chat_id: me.id(),
+                file: Arc::new(Mutex::new(file)),
+            },
+        );
+    }
+
+    ACCOUNTS_DATA
+        .set(accounts_data)
+        .expect("accounts data already set");
 
     tokio::select! {
         _ = waiter => {log::warn!("worker stopped")}
@@ -149,39 +158,36 @@ fn create_updates_reader(
     mut receiver: Receiver<Box<Update>>,
 ) -> JoinHandle<Result<(), std::io::Error>> {
     tokio::spawn(async move {
-
         while let Some(message) = receiver.recv().await {
             match message.as_ref() {
-                Update::NewMessage(new_message) => {
-                    match ACCOUNTS_DATA.get() {
-                        None => {
-                            log::debug!("accounts data is not set");
-                            continue
-                        }
-                        Some(d) => {
-                            let client_id = new_message.client_id().unwrap_or(-1);
-                            match d.get(&client_id) {
-                                None => {
-                                    log::error!("client_id not found: {}", client_id);
-                                    continue
+                Update::NewMessage(new_message) => match ACCOUNTS_DATA.get() {
+                    None => {
+                        log::debug!("accounts data is not set");
+                        continue;
+                    }
+                    Some(d) => {
+                        let client_id = new_message.client_id().unwrap_or(-1);
+                        match d.get(&client_id) {
+                            None => {
+                                log::error!("client_id not found: {}", client_id);
+                                continue;
+                            }
+                            Some(data) => {
+                                if &new_message.message().chat_id() != &data.chat_id {
+                                    log::debug!("chat id is not equal: {}", data.chat_id);
+                                    continue;
                                 }
-                                Some(data) => {
-                                    if &new_message.message().chat_id() != data.chat_id {
-                                        log::debug!("chat id is not equal: {}", v);
-                                        continue;
+                                match parse_message_content(new_message.message().content()) {
+                                    Some(text) => {
+                                        let mut f = data.file.lock().await;
+                                        f.write_all(format!("{}\n\n***\n\n", text).as_bytes())?;
                                     }
-                                    match parse_message_content(new_message.message().content()) {
-                                        Some(text) => {
-                                            file.write_all(format!("{}\n\n***\n\n", text).as_bytes())?;
-                                        }
-                                        None => {}
-                                    }
+                                    None => {}
                                 }
                             }
                         }
                     }
-
-                }
+                },
                 _ => {}
             }
         }

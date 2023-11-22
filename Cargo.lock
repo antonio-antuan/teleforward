@@ -477,7 +477,7 @@ checksum = "c08c74e62047bb2de4ff487b251e4a92e24f48745648451635cec7d591162d9f"
 [[package]]
 name = "rust-tdlib"
 version = "0.4.3"
-source = "git+https://github.com/antonio-antuan/rust-tdlib?branch=1.8.21#dc5133a830d60cb3bad10570e1d70734f42419bf"
+source = "git+https://github.com/antonio-antuan/rust-tdlib?branch=1.8.21#3c919d016c1f2ad2a53b37fafcd51e9c39fb6169"
 dependencies = [
  "async-trait",
  "dyn-clone",
