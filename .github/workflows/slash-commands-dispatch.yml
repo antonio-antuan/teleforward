@@ -11,6 +11,7 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           commands: auth-code
+          reaction-token: ${{ secrets.PAT }}
           issue-type: issue
 
       - name: Get auth code
