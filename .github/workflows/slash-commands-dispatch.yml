@@ -11,10 +11,9 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           commands: auth-code
-          reaction-token: ${{ secrets.PAT }}
           issue-type: issue
 
       - name: Get auth code
         id: vars
         run: |
-          echo ${{ github.event.client_payload.slash_command.args.unnamed.all }}
+          echo "${{ toJson(github.event.client_payload.slash_command) }}"
