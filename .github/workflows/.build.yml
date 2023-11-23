@@ -1,7 +1,6 @@
 on:
-  push: # Trigger the workflow on workflow_run event
-    branches:
-      - master
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
