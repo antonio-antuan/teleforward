@@ -1,0 +1,12 @@
+log_level: info
+
+accounts:
+  - phone: +9999999999
+    file_path: "data/data.md"
+    tddb_dir: tddb
+
+telegram:
+  api_id: 123123
+  api_hash: hash
+  tdlib_log_verbosity: 1
+

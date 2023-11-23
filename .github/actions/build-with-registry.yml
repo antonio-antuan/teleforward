@@ -1,0 +1,41 @@
+name: "Start app"
+description: "Starts the app on the server. First - checks if it is authorized. If not - creates an issue with instructions."
+
+
+inputs:
+  registry_username:
+    required: true
+    description: "Registry  username"
+  registry_password:
+    required: true
+    description: "Registry password"
+  image:
+    required: true
+    description: "Image name"
+
+runs:
+
+  using: composite
+
+  steps:
+
+    - name: Set up Docker Buildx
+      id: buildx_setup
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to Docker Hub
+      id: docker_login
+      uses: docker/login-action@v3
+      with:
+        username: ${{ inputs.registry_username }}
+        password: ${{ inputs.registry_password }}
+
+    - name: Build and push
+      id: build_and_push
+      uses: docker/build-push-action@v5
+      # get value of check_args
+      with:
+        push: true
+        # pull is just to speedup build via cache
+        pull: true
+        tags: ${{ inputs.image }}

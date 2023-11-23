@@ -1,0 +1,32 @@
+name: "Start app"
+description: "Starts the app on the server. First - checks if it is authorized. If not - creates an issue with instructions."
+
+
+inputs:
+  image:
+    required: true
+    description: "Image name"
+  dest:
+    required: true
+    description: "Destination path"
+
+runs:
+
+  using: composite
+
+  steps:
+
+    - name: Set up Docker Buildx
+      id: buildx_setup
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push
+      id: build_and_push
+      uses: docker/build-push-action@v5
+      # get value of check_args
+      with:
+        push: false
+        # pull is just to speedup build via cache
+        pull: false
+        outputs: type=local,dest=${{ inputs.dest }}
+        tags: ${{ inputs.image }}

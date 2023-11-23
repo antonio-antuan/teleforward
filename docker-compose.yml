@@ -1,0 +1,12 @@
+version: '3.7'
+
+services:
+  teleforward:
+    image: ${IMAGE:-teleforward:latest}
+    command: ["run"]
+    environment:
+      - LD_LIBRARY_PATH=/usr/local/lib
+    volumes:
+      - ./data:/data
+      - ./tddb:/tddb
+      - ${LOCAL_CONFIG_PATH:-./config.yml}:/config.yml
