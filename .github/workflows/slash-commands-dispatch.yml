@@ -11,7 +11,6 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           commands: auth-code
-          repository: ${{ github.repository }}
           issue-type: issue
 
       - name: Get auth code
