@@ -17,4 +17,4 @@ jobs:
       - name: Get auth code
         id: vars
         run: |
-          echo "${{ github.event.client_payload.slash_command.args.unnamed }}"
+          echo ${{ github.event.client_payload.slash_command.args.unnamed.all }}
