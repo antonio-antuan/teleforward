@@ -17,5 +17,4 @@ jobs:
       - name: Get auth code
         id: vars
         run: |
-          code=${{ github.event.client_payload.slash_command.args.unnamed.arg1 }}
-          echo "$branch"
+          echo "${{ github.event.client_payload.slash_command.args.unnamed.arg1 }}"
