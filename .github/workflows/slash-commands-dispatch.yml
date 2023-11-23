@@ -14,3 +14,8 @@ jobs:
           repository: ${{ github.repository }}
           issue-type: issue
 
+      - name: Get auth code
+        id: vars
+        run: |
+          code=${{ github.event.client_payload.slash_command.args.named.code }}
+          echo "$branch"
