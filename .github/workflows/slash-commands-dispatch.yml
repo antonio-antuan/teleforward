@@ -2,6 +2,7 @@ name: Slash Command Dispatch
 on:
   issue_comment:
     types: [created]
+
 jobs:
   slashCommandDispatch:
     runs-on: ubuntu-latest
@@ -10,10 +11,8 @@ jobs:
         uses: peter-evans/slash-command-dispatch@v3
         with:
           token: ${{ secrets.PAT }}
-          commands: auth-code
+          reaction-token: ${{ secrets.PAT }}
           issue-type: issue
-
-      - name: Get auth code
-        id: vars
-        run: |
-          echo "${{ toJson(github.event.client_payload.slash_command) }}"
+          dispatch-type: workflow
+          commands: |
+            auth-code

@@ -1,0 +1,22 @@
+name: Auth command
+
+env:
+  code: ''
+
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        type: string
+        default: ''
+        required: true
+        description: 'Authorization code'
+
+jobs:
+  prepare:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Merge variables
+        id: variables
+        run: |
+          echo "code=${{ github.event.inputs.code }}"
