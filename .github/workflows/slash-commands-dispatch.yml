@@ -14,5 +14,4 @@ jobs:
           reaction-token: ${{ secrets.PAT }}
           issue-type: issue
           dispatch-type: workflow
-          commands: |
-            auth-code
+          commands: auth-code
