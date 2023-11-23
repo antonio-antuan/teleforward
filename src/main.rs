@@ -1,8 +1,18 @@
+use std::collections::HashMap;
+use std::error::Error;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::str::FromStr;
+use std::sync::{Arc, OnceLock};
+use std::{env, fs, path};
+
+use clap::{Parser, Subcommand};
+use log::LevelFilter;
 use rust_tdlib::client::tdlib_client::TdJson;
 use rust_tdlib::client::{
     AuthStateHandlerProxy, ClientIdentifier, ClientState, ConsoleClientStateHandlerIdentified,
 };
-use rust_tdlib::types::RObject;
+use rust_tdlib::types::{CreatePrivateChat, DownloadFile, GetChatHistory, Message, RObject};
 use rust_tdlib::types::{FormattedText, GetMe, MessageContent, TextEntity, TextEntityType};
 use rust_tdlib::{
     client::{Client, Worker},
@@ -10,48 +20,79 @@ use rust_tdlib::{
     types::{SetTdlibParameters, Update},
 };
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::env;
-use std::error::Error;
-use std::fs::{File, OpenOptions};
-use std::io::Write;
-use std::sync::{Arc, OnceLock};
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
+use tokio::time;
 
-static ACCOUNTS_DATA: OnceLock<HashMap<i32, AccountData>> = OnceLock::new();
+#[derive(Parser)]
+struct Cli {
+    #[arg(short, long, default_value = "config.yml")]
+    config: String,
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Initialize clients
+    Init,
+    /// Runs the main routine
+    Run,
+    /// Synchronizes history
+    Sync,
+}
+
+static ACCOUNTS_DATA: OnceLock<HashMap<i32, ClientWithMeta>> = OnceLock::new();
 
 #[derive(Debug)]
-struct AccountData {
+struct ClientWithMeta {
     chat_id: i64,
     file: Arc<Mutex<File>>,
+    client: Client<TdJson>,
+    file_path: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct Config {
     accounts: Vec<AccountSettings>,
 
-    tdlib_log_verbosity: Option<i32>,
-    tddb_dir: String,
+    #[serde(default = "default_verbosity")]
+    tdlib_log_verbosity: i32,
+    #[serde(default = "default_loglevel")]
+    log_level: String,
+
     api_id: i32,
     api_hash: String,
+}
+
+const fn default_verbosity() -> i32 {
+    1
+}
+
+fn default_loglevel() -> String {
+    "error".to_string()
 }
 
 #[derive(Deserialize, Debug)]
 struct AccountSettings {
     phone: String,
+    tddb_dir: String,
     file_path: String,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let f = File::open("config.yml").expect("Could not open file.");
+    let cli = Cli::parse();
+
+    let f = File::open(cli.config).expect("Could not open file.");
     let config: Config = serde_yaml::from_reader(f).expect("Could not read values.");
-    tdjson::set_log_verbosity_level(config.tdlib_log_verbosity.unwrap_or(1));
-    env_logger::init();
+    // if config.accounts.len() > 1 {
+    //     panic!("only one account supported");
+    // }
 
     let (sender, receiver) = tokio::sync::mpsc::channel::<Box<Update>>(100);
+
     let reader = create_updates_reader(receiver);
 
     let mut worker = Worker::builder()
@@ -59,70 +100,189 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .build()?;
     let waiter = worker.start();
 
-    let mut accounts_data = HashMap::new();
-
-    for account in config.accounts.iter() {
-        let client = Client::builder()
-            .with_tdlib_parameters(
-                SetTdlibParameters::builder()
-                    .database_directory(&config.tddb_dir)
-                    .use_test_dc(false)
-                    .api_id(config.api_id)
-                    .api_hash(config.api_hash.clone())
-                    .system_language_code("en")
-                    .device_model("Desktop")
-                    .system_version("Unknown")
-                    .application_version(env!("CARGO_PKG_VERSION"))
-                    .enable_storage_optimizer(true)
-                    .build(),
-            )
-            .with_updates_sender(sender.clone())
-            .with_auth_state_channel(10)
-            .with_client_auth_state_handler(ConsoleClientStateHandlerIdentified::new(
-                ClientIdentifier::PhoneNumber(account.phone.clone()),
-            ))
-            .build()?;
-        let client = worker.bind_client(client).await?;
-        wait_authorized(&client, &worker).await;
-        log::debug!("{} authorized", account.phone);
-
-        let me = client.get_me(GetMe::builder().build()).await?;
-        log::debug!("authorized as: {:?}", me);
-
-        let file = OpenOptions::new()
-            .write(true)
-            .append(true)
-            .create(true)
-            .open(account.file_path.as_str())?;
-
-        accounts_data.insert(
-            client.get_client_id().expect("client_id not set"),
-            AccountData {
-                chat_id: me.id(),
-                file: Arc::new(Mutex::new(file)),
-            },
-        );
-    }
-
-    ACCOUNTS_DATA
-        .set(accounts_data)
-        .expect("accounts data already set");
-
-    tokio::select! {
-        _ = waiter => {log::warn!("worker stopped")}
-        _ = tokio::signal::ctrl_c() => {log::info!("ctrl-c received")}
-        res = reader => {
-            match res {
-                Ok(_) => {
-                    log::info!("reader stopped");
+    match &cli.command {
+        Commands::Init => {
+            auth_clients(config, &mut worker, sender.clone()).await?;
+            worker.stop();
+            waiter.await?;
+        }
+        Commands::Run => {
+            auth_clients(config, &mut worker, sender.clone()).await?;
+            tokio::select! {
+                _ = waiter => {log::warn!("worker stopped")}
+                res = reader => {
+                    match res {
+                        Ok(_) => {
+                            log::info!("reader stopped");
+                        }
+                        Err(err) => {
+                            log::error!("reader error: {}", err);
+                        }
+                    }
                 }
-                Err(err) => {
-                    log::error!("reader error: {}", err);
-                }
+                _ = tokio::signal::ctrl_c() => {log::info!("ctrl-c received")}
+            }
+        }
+        Commands::Sync => {
+            setup_logging(&config.log_level, config.tdlib_log_verbosity)?;
+            for account in config.accounts.iter() {
+                let acc_data = setup_client(
+                    &mut worker,
+                    account,
+                    config.api_id,
+                    config.api_hash.clone(),
+                    None,
+                )
+                .await?;
+                sync(&acc_data).await?;
             }
         }
     }
+
     Ok(())
+}
+
+async fn auth_clients(
+    config: Config,
+    worker: &mut Worker<AuthStateHandlerProxy, TdJson>,
+    sender: Sender<Box<Update>>,
+) -> Result<(), Box<dyn Error>> {
+    setup_logging(&config.log_level, config.tdlib_log_verbosity)?;
+    let mut accounts_data = HashMap::new();
+
+    for account in config.accounts.iter() {
+        let client_data = setup_client(
+            worker,
+            account,
+            config.api_id,
+            config.api_hash.clone(),
+            Some(sender.clone()),
+        )
+        .await?;
+
+        accounts_data.insert(
+            client_data
+                .client
+                .get_client_id()
+                .expect("client_id not set"),
+            client_data,
+        );
+    }
+    ACCOUNTS_DATA
+        .set(accounts_data)
+        .expect("accounts data already set");
+    Ok(())
+}
+
+fn setup_logging(log_level: &str, tdlib_log_verbosity: i32) -> Result<(), Box<dyn Error>> {
+    env_logger::Builder::new()
+        .filter_level(LevelFilter::from_str(&log_level)?)
+        .init();
+    tdjson::set_log_verbosity_level(tdlib_log_verbosity);
+    Ok(())
+}
+
+async fn setup_client(
+    worker: &mut Worker<AuthStateHandlerProxy, TdJson>,
+    account: &AccountSettings,
+    api_id: i32,
+    api_hash: String,
+    sender: Option<Sender<Box<Update>>>,
+) -> Result<ClientWithMeta, Box<dyn Error>> {
+    let mut builder = Client::builder()
+        .with_tdlib_parameters(
+            SetTdlibParameters::builder()
+                .database_directory(&account.tddb_dir)
+                .use_test_dc(false)
+                .api_id(api_id)
+                .api_hash(api_hash)
+                .system_language_code("en")
+                .device_model("Desktop")
+                .system_version("Unknown")
+                .application_version(env!("CARGO_PKG_VERSION"))
+                .enable_storage_optimizer(true)
+                .build(),
+        )
+        .with_auth_state_channel(10)
+        .with_client_auth_state_handler(ConsoleClientStateHandlerIdentified::new(
+            ClientIdentifier::PhoneNumber(account.phone.clone()),
+        ));
+    match sender {
+        None => {}
+        Some(sender) => {
+            builder = builder.with_updates_sender(sender);
+        }
+    }
+    let client = builder.build()?;
+    let client = worker.bind_client(client).await?;
+    wait_authorized(&client, &worker).await;
+    log::debug!("{} authorized", account.phone);
+
+    let me = client.get_me(GetMe::builder().build()).await?;
+    log::debug!("authorized as: {:?}", me);
+
+    let path = path::Path::new(account.file_path.as_str());
+    fs::create_dir_all(path.parent().unwrap())?;
+    let file = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .create(true)
+        .open(account.file_path.as_str())?;
+
+    Ok(ClientWithMeta {
+        chat_id: me.id(),
+        file: Arc::new(Mutex::new(file)),
+        client,
+        file_path: account.file_path.clone(),
+    })
+}
+
+async fn sync(acc_data: &ClientWithMeta) -> Result<(), Box<dyn Error>> {
+    // TODO: create backup
+    log::info!("start sync for client {}", acc_data.chat_id);
+    let mut from_msg_id = 0;
+    acc_data
+        .client
+        .create_private_chat(
+            CreatePrivateChat::builder()
+                .user_id(acc_data.chat_id)
+                .build(),
+        )
+        .await?;
+    let mut total_processed_messages = 0;
+    loop {
+        let messages = acc_data
+            .client
+            .get_chat_history(
+                GetChatHistory::builder()
+                    .chat_id(acc_data.chat_id)
+                    .offset(0)
+                    .from_message_id(from_msg_id)
+                    .limit(100),
+            )
+            .await?;
+        time::sleep(std::time::Duration::from_secs(1)).await;
+        if messages.total_count() == 0 {
+            log::debug!("processed {} messages", total_processed_messages);
+            return Ok(());
+        }
+
+        for msg in messages.messages() {
+            match msg {
+                None => {}
+                Some(msg) => {
+                    total_processed_messages += 1;
+                    from_msg_id = msg.id();
+                    process_message(msg, acc_data).await?;
+                }
+            }
+        }
+        log::info!(
+            "processed {} of {} messages",
+            total_processed_messages,
+            messages.total_count()
+        );
+    }
 }
 
 async fn wait_authorized(client: &Client<TdJson>, worker: &Worker<AuthStateHandlerProxy, TdJson>) {
@@ -177,13 +337,7 @@ fn create_updates_reader(
                                     log::debug!("chat id is not equal: {}", data.chat_id);
                                     continue;
                                 }
-                                match parse_message_content(new_message.message().content()) {
-                                    Some(text) => {
-                                        let mut f = data.file.lock().await;
-                                        f.write_all(format!("{}\n\n***\n\n", text).as_bytes())?;
-                                    }
-                                    None => {}
-                                }
+                                process_message(new_message.message(), data).await?;
                             }
                         }
                     }
@@ -195,7 +349,27 @@ fn create_updates_reader(
     })
 }
 
-fn parse_message_content(content: &MessageContent) -> Option<String> {
+async fn process_message(
+    message: &Message,
+    client_meta: &ClientWithMeta,
+) -> Result<(), std::io::Error> {
+    match parse_message_content(client_meta, message.content()).await {
+        Some(text) => {
+            client_meta
+                .file
+                .lock()
+                .await
+                .write_all(format!("{}\n\n***\n\n", text).as_bytes())?;
+        }
+        None => {}
+    };
+    Ok(())
+}
+
+async fn parse_message_content(
+    client_meta: &ClientWithMeta,
+    content: &MessageContent,
+) -> Option<String> {
     match content {
         MessageContent::MessageText(text) => return Some(parse_formatted_text(text.text())),
         MessageContent::MessageAnimation(message_animation) => {
@@ -205,9 +379,55 @@ fn parse_message_content(content: &MessageContent) -> Option<String> {
             return Some(parse_formatted_text(message_audio.caption()));
         }
         MessageContent::MessageDocument(message_document) => {
-            return Some(parse_formatted_text(message_document.caption()));
+            let doc = message_document.document();
+            log::info!("downloading file: {}", doc.file_name());
+            let file = match client_meta.client
+                .download_file(
+                    DownloadFile::builder()
+                        .file_id(doc.document().id())
+                        .synchronous(true)
+                        .priority(1)
+                        .build(),
+                )
+                .await {
+                Ok(file) => file,
+                Err(err) => {
+                    log::error!("cannot download file: {}", err);
+                    return None;
+                }
+            };
+            log::info!("downloaded file: {}", doc.file_name());
+            let path = path::Path::new(client_meta.file_path.as_str()).parent()?.join(doc.file_name());
+            fs::rename(file.local().path(), &path).ok()?;
+            let mut parsed_text = parse_formatted_text(message_document.caption());
+            parsed_text.push_str(format!("\n\n![[{}]]", doc.file_name()).as_str());
+            return Some(parsed_text);
         }
-        MessageContent::MessagePhoto(photo) => return Some(parse_formatted_text(photo.caption())),
+        MessageContent::MessagePhoto(photo) => {
+            log::info!("downloading photo");
+            let file = match client_meta.client
+                .download_file(
+                    DownloadFile::builder()
+                        .file_id(photo.photo().sizes().first().unwrap().photo().id())
+                        .synchronous(true)
+                        .priority(1)
+                        .build(),
+                )
+                .await {
+                Ok(file) => file,
+                Err(err) => {
+                    log::error!("cannot download file: {}", err);
+                    return None;
+                }
+            };
+            log::info!("downloaded photo");
+            let file_name = path::Path::new(file.local().path()).file_name().unwrap();
+            let path = path::Path::new(client_meta.file_path.as_str()).parent().unwrap().join(&file_name);
+            fs::rename(file.local().path(), &path).ok()?;
+            let mut parsed_text = parse_formatted_text(photo.caption());
+            parsed_text.push_str(format!("\n\n![[{}]]", file_name.to_str().unwrap()).as_str());
+            return Some(parsed_text);
+        },
         MessageContent::MessageVideo(message_video) => {
             return Some(parse_formatted_text(message_video.caption()));
         }
@@ -374,8 +594,9 @@ fn make_entities_stack(entities: &[TextEntity]) -> Vec<(usize, String)> {
 
 #[cfg(test)]
 mod tests {
-    use crate::parse_formatted_text;
     use rust_tdlib::types::FormattedText;
+
+    use crate::parse_formatted_text;
 
     #[test]
     fn test_parse_formatted_text() {
