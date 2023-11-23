@@ -11,14 +11,3 @@ jobs:
         run: |
           code=${{ github.event.client_payload.slash_command.args.named.code }}
           echo "$branch"
-
-      - name: create an issue
-        uses: dacbd/create-issue-action@main
-        with:
-          token: ${{ secrets.PAT }}
-          title: Authorization needed
-          body: |
-            # Telegram authorization is needed
-            Please, enter the authorization code in the comment below. 
-            Start your comment with `/auth-code` and then enter the code.
-            The last code was: ${{ steps.vars.outputs.code }}
