@@ -3,10 +3,11 @@ version: '3.7'
 services:
   teleforward:
     image: ${IMAGE:-teleforward:latest}
-    command: ["run"]
+    command: ["-c", "/config.yml", "run"]
     environment:
       - LD_LIBRARY_PATH=/usr/local/lib
     volumes:
-      - ./data:/data
-      - ./tddb:/tddb
+      - ${DATA_VOLUME:-./data}:/data
+      - ${TDDB_VOLUME:-./tddb}:/tddb
       - ${LOCAL_CONFIG_PATH:-./config.yml}:/config.yml
+    restart: unless-stopped

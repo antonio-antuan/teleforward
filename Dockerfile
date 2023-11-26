@@ -24,7 +24,7 @@ RUN git clone https://github.com/tdlib/td.git /td && \
 
 COPY . /usr/src/myapp
 WORKDIR /usr/src/myapp
-RUN cargo build && \
+RUN cargo build --release && \
     cp target/release/teleforward /opt/teleforward && \
     rm -rf /usr/src/myapp
 
