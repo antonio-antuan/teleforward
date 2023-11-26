@@ -1,4 +1,5 @@
 /target
 tddb*
 .idea
-config.yml
+config*yml
+data

@@ -6,12 +6,16 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = { version = "1.0.75", features = ["backtrace"] }
+async-trait = "0.1.74"
+chrono = "0.4.31"
 clap = { version = "4.4.8", features = ["derive"] }
 env_logger = "0.10.1"
 log = "0.4.20"
 rust-tdlib = {git = "https://github.com/antonio-antuan/rust-tdlib", branch = "1.8.21"}
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9.27"
+thiserror = "1.0.50"
 
 [dependencies.tokio]
 version = "1"

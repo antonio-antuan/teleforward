@@ -16,7 +16,15 @@ jobs:
   prepare:
     runs-on: ubuntu-20.04
     steps:
-      - name: Merge variables
-        id: variables
-        run: |
-          echo "code=${{ github.event.inputs.code }}"
+      - uses: actions/checkout@v3
+
+      - name: auth and start
+        id: auth-and-start
+        uses: ./.github/actions/start-app.yml
+        with:
+          server-host: ${{ secrets.SERVER_HOST }}
+          server-username: ${{ secrets.SERVER_USERNAME }}
+          server-key: ${{ secrets.SERVER_KEY }}
+          server-port: ${{ secrets.SERVER_PORT }}
+          pat: ${{ secrets.PAT }}
+          auth-code: ${{ github.event.inputs.code }}
