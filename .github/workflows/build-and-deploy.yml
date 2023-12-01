@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v3
       - name: build with registry
         id: build_with_registry
-        uses: ./.github/actions/build-with-registry.yml
+        uses: ./.github/actions/build-with-registry
         with:
           registry_username: ${{ secrets.REGISTRY_USERNAME }}
           registry_password: ${{ secrets.REGISTRY_PASSWORD }}
@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v3
       - name: build tar
         id: build_tar
-        uses: ./.github/actions/build-with-tar.yml
+        uses: ./.github/actions/build-with-tar
         with:
           image: ${{ env.IMAGE }}
           dest: image.tar
@@ -117,7 +117,7 @@ jobs:
 
       - name: start
         id: start
-        uses: ./.github/actions/start-app.yml
+        uses: ./.github/actions/start-app
         with:
           server-host: ${{ secrets.SERVER_HOST }}
           server-username: ${{ secrets.SERVER_USERNAME }}
@@ -162,7 +162,7 @@ jobs:
 
       - name: start
         id: start
-        uses: ./.github/actions/start-app.yml
+        uses: ./.github/actions/start-app
         with:
           server-host: ${{ secrets.SERVER_HOST }}
           server-username: ${{ secrets.SERVER_USERNAME }}
