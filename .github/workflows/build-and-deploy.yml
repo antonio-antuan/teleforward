@@ -10,11 +10,13 @@ on:
       deploy:
         description: 'Deploy'
         required: false
-        default: 'true'
+        type: boolean
+        default: true
       use_registry:
         description: 'Use registry'
         required: false
-        default: 'false'
+        type: boolean
+        default: false
 
 env:
   IMAGE: ${{ secrets.IMAGE_NAME }}:${{ github.event.inputs.image_tag }}
