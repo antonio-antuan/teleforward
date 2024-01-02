@@ -42,6 +42,7 @@ runs:
         # pull is just to speedup build via cache
         pull: true
         tags: ${{ inputs.base-image }}
+        file: docker/base.Dockerfile
 
     - name: Build and push
       id: build-app
@@ -52,3 +53,4 @@ runs:
         # pull is just to speedup build via cache
         pull: true
         tags: ${{ inputs.image }}
+        file: docker/app.dockerfile

@@ -20,7 +20,7 @@ on:
 
 env:
   IMAGE: ${{ secrets.IMAGE_NAME }}:${{ github.event.inputs.image_tag }}
-  BASE_IMAGE: antonioantuan/teleforward-base:latest
+  BASE_IMAGE: ${{ secrets.IMAGE_NAME }}-base:latest
 
 jobs:
   build-with-registry:
