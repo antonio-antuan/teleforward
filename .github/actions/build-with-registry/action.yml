@@ -34,7 +34,7 @@ runs:
         password: ${{ inputs.registry_password }}
 
     - name: Build and push
-      id: build_and_push
+      id: build-base
       uses: docker/build-push-action@v5
       # get value of check_args
       with:
@@ -44,7 +44,7 @@ runs:
         tags: ${{ inputs.base-image }}
 
     - name: Build and push
-      id: build_and_push
+      id: build-app
       uses: docker/build-push-action@v5
       # get value of check_args
       with:
