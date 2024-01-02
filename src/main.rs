@@ -682,11 +682,18 @@ async fn parse_message_content(
                 .parent()
                 .unwrap()
                 .join(&file_name);
-            fs::rename(file.local().path(), &path).ok()?;
-            log::debug!("downloaded photo to {:?}", path.to_str());
-            let mut parsed_text = format!("\n\n![]({})\n\n", file_name.to_str().unwrap());
-            parsed_text.push_str(parse_formatted_text(photo.caption()).as_str());
-            return Some(parsed_text);
+            match fs::rename(file.local().path(), &path) {
+                Ok(_) => {
+                    log::debug!("downloaded photo to {:?}", path.to_str());
+                    let mut parsed_text = format!("\n\n![]({})\n\n", file_name.to_str().unwrap());
+                    parsed_text.push_str(parse_formatted_text(photo.caption()).as_str());
+                    return Some(parsed_text);
+                }
+                Err(err) => {
+                    log::error!("cannot move file: {}", err);
+                    return Some(parse_formatted_text(photo.caption()))
+                }
+            }
         }
         MessageContent::MessageVideo(message_video) => {
             return Some(parse_formatted_text(message_video.caption()));

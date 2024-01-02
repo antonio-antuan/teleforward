@@ -12,6 +12,9 @@ inputs:
   image:
     required: true
     description: "Image name"
+  base-image:
+    required: true
+    description: "Base image name"
 
 runs:
 
@@ -29,6 +32,16 @@ runs:
       with:
         username: ${{ inputs.registry_username }}
         password: ${{ inputs.registry_password }}
+
+    - name: Build and push
+      id: build_and_push
+      uses: docker/build-push-action@v5
+      # get value of check_args
+      with:
+        push: true
+        # pull is just to speedup build via cache
+        pull: true
+        tags: ${{ inputs.base-image }}
 
     - name: Build and push
       id: build_and_push
