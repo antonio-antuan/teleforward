@@ -19,8 +19,8 @@ on:
         default: false
 
 env:
-  IMAGE: ${{ secrets.IMAGE_NAME }}:${{ github.event.inputs.image_tag }}
-  BASE_IMAGE: ${{ secrets.IMAGE_NAME }}-base:latest
+  IMAGE: ${{ vars.IMAGE_NAME }}:${{ github.event.inputs.image_tag }}
+  BASE_IMAGE: ${{ vars.IMAGE_NAME }}-base:latest
 
 jobs:
   build-with-registry:
