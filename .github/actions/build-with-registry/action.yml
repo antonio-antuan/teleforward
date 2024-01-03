@@ -35,22 +35,14 @@ runs:
 
     - name: Build and push
       id: build-base
-      uses: docker/build-push-action@v5
-      # get value of check_args
-      with:
-        push: true
-        # pull is just to speedup build via cache
-        pull: true
-        tags: ${{ inputs.base-image }}
-        file: docker/base.dockerfile
+      shell: bash
+      run: |
+        command="docker buildx build --progress plain --output type=registry --tag ${{ inputs.base-image }} --push --file docker/base.dockerfile ."
+        echo $command
+        docker pull ${{ inputs.base-image }} || $command 
 
     - name: Build and push
       id: build-app
-      uses: docker/build-push-action@v5
-      # get value of check_args
-      with:
-        push: true
-        # pull is just to speedup build via cache
-        pull: true
-        tags: ${{ inputs.image }}
-        file: docker/app.dockerfile
+      shell: bash
+      run: |
+        docker buildx build --progress plain --output type=registry --tag ${{ inputs.image }} --push --file docker/Dockerfile .
