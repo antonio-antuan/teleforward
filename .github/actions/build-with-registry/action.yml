@@ -45,4 +45,4 @@ runs:
       id: build-app
       shell: bash
       run: |
-        docker buildx build --progress plain --output type=registry --tag ${{ inputs.image }} --push --file docker/Dockerfile .
+        docker buildx build --progress plain --output type=registry --tag ${{ inputs.image }} --push --file docker/app.dockerfile .
