@@ -16,7 +16,7 @@ on:
         description: 'Use registry'
         required: false
         type: boolean
-        default: false
+        default: true
 
 env:
   IMAGE: ${{ vars.IMAGE_NAME }}:${{ github.event.inputs.image_tag }}
