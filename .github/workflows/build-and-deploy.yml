@@ -66,14 +66,14 @@ jobs:
         uses: fjogeleit/yaml-update-action@v0.13.2
         with:
           commitChange: false
-          # we don't commit, so we can update an example config
-          valueFile: 'config.yml'
           # `ACCOUNTS_JSON` should be in the format of [{"phone": "+9999999999", "file_path": "/home/me/data.md", "tddb_dir": "tddb"}]
           # `TELEGRAM_JSON` should be in the format of {"api_id": 123123, "api_hash": "hash", "tdlib_log_verbosity": 1}
           changes: |
             {
-              "telegram": ${{ vars.TELEGRAM_JSON }},
-              "accounts": ${{ vars.ACCOUNTS_JSON }}
+              "config.yml": {
+                "telegram": ${{ vars.TELEGRAM_JSON }},
+                "accounts": ${{ vars.ACCOUNTS_JSON }}
+              }
             }
 
       # stop before copying docker-compose.
