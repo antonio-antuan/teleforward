@@ -40,7 +40,7 @@ runs:
         script: |
           cd ${{ inputs.server_workdir }}
           export IMAGE=${{ inputs.image }}
-          docker-compose stop && docker-compose rm teleforward
+          docker-compose stop && docker-compose rm -f teleforward
 
     - name: authorize
       id: auth
