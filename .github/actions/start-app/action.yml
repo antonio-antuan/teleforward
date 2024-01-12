@@ -29,8 +29,8 @@ runs:
 
   steps:
 
-    - name: start app
-      id: start-app
+    - name: stop app
+      id: stop-app
       uses: appleboy/ssh-action@v1.0.0
       with:
         host:  ${{ inputs.server-host }}
@@ -40,29 +40,52 @@ runs:
         script: |
           cd ${{ inputs.server_workdir }}
           export IMAGE=${{ inputs.image }}
-          # we have to stop everything because tdlib cannot run concurrent clients
-          docker-compose stop
-          
-          if [ -z "${{ inputs.auth-code }}" ]; then
-            echo "App is already authorized"
-          else
-            phone=$(docker-compose logs teleforward | grep 'auth code is needed for' | tail -1 | awk '{print $NF}')
-            timeout --signal SIGKILL 10s docker-compose run --rm teleforward init $phone:${{ inputs.auth-code }}
-          fi
+          docker-compose stop && docker-compose rm teleforward
+
+    - name: authorize
+      id: auth
+      uses: appleboy/ssh-action@v1.0.0
+      if: inputs.auth-code != ''
+      with:
+        host:  ${{ inputs.server-host }}
+        username: ${{ inputs.server-username }}
+        key: ${{ inputs.server-key }}
+        port: ${{ inputs.server-port }}
+        script: |
+          phone=$(docker-compose logs teleforward | grep 'auth code is needed for' | tail -1 | awk '{print $NF}')
+          timeout --signal SIGKILL 10s docker-compose run --rm teleforward init $phone:${{ inputs.auth-code }}
+
+    - name: start app
+      id: start-app
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host:  ${{ inputs.server-host }}
+        username: ${{ inputs.server-username }}
+        key: ${{ inputs.server-key }}
+        port: ${{ inputs.server-port }}
+        script: |
           docker-compose up -d
+          sleep 5
+          restarts=$(docker inspect --format '{{ .RestartCount }}' $(docker-compose ps -q))
+          if [ $restarts -gt 0 ]; then
+              docker-compose stop
+              echo "App failed to start, restarts: $restarts"
+              exit 1
+          fi
 
     - name: create an issue
       uses: dacbd/create-issue-action@v1.2.1
-      if: steps.start_app.outcome != 'success'
+      if: steps.start-app.outcome != 'success'
       with:
         token: ${{ github.token }}
-        title: Authorization needed
+        title: Failed to start app
         body: |
           # Telegram authorization is needed
-          Looks like you have not authorized the app.
-          You can check it manually on server and close this issue.
-          If you do know that app needs to be authorized please, enter the authorization code in the comment below.
-          Put your comment as `/auth code=XXXXXX`.
+          Looks like app failed to start because it is not authorized (the most common reason).
+          You can check it manually on server and close this issue if it is not an authorization issue.
+          
+          If you do know that app needs to be authorized, please, enter the authorization code in the comment below.
+          Put your comment here as `/auth code=XXXXXX`.
 
 
 

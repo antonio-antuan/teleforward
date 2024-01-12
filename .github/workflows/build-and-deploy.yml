@@ -1,4 +1,6 @@
 name: Build and deploy
+permissions:
+  issues: write
 
 on:
   workflow_dispatch:
@@ -88,7 +90,7 @@ jobs:
           # copy docker-compose from the repo
           script: |
             cd ${{ secrets.SERVER_APP_PATH }}
-            [ -f docker-compose.yml ] && docker-compose stop || echo 'docker-compose.yml not found, skipping.'
+            [ -f docker-compose.yml ] && docker-compose stop && docker-compose rm teleforward || echo 'docker-compose.yml not found, skipping.'
 
       - name: copy configs
         id: copy_configs
