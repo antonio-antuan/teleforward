@@ -39,7 +39,6 @@ runs:
         port: ${{ inputs.server-port }}
         script: |
           cd ${{ inputs.server_workdir }}
-          export IMAGE=${{ inputs.image }}
           docker-compose stop && docker-compose rm -f teleforward
 
     - name: authorize
@@ -52,6 +51,7 @@ runs:
         key: ${{ inputs.server-key }}
         port: ${{ inputs.server-port }}
         script: |
+          export IMAGE=${{ inputs.image }}
           cd ${{ inputs.server_workdir }}
           phone=$(docker-compose logs teleforward | grep 'auth code is needed for' | tail -1 | awk '{print $NF}')
           timeout --signal SIGKILL 10s docker-compose run --rm teleforward init $phone:${{ inputs.auth-code }}
@@ -66,6 +66,7 @@ runs:
         port: ${{ inputs.server-port }}
         script: |
           cd ${{ inputs.server_workdir }}
+          export IMAGE=${{ inputs.image }}
           docker-compose up -d
           sleep 5
           restarts=$(docker inspect --format '{{ .RestartCount }}' $(docker-compose ps -q))
