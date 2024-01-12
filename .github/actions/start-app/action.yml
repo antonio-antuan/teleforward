@@ -75,6 +75,11 @@ runs:
               echo "App failed to start, restarts: $restarts"
               exit 1
           fi
+          auth_needed=$(docker-compose logs teleforward | grep 'auth code is needed for' | tail -1 | awk '{print $NF}')
+          if [ "$auth_needed" != "" ]; then
+              echo "App failed to start, auth code is needed for $auth_needed"
+              exit 1
+          fi
 
     - name: create an issue
       uses: dacbd/create-issue-action@v1.2.1
