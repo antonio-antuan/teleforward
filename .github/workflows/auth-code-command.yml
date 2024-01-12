@@ -26,5 +26,5 @@ jobs:
           server-username: ${{ secrets.SERVER_USERNAME }}
           server-key: ${{ secrets.SERVER_KEY }}
           server-port: ${{ secrets.SERVER_PORT }}
-          pat: ${{ secrets.PAT }}
+          pat: ${{ github.token }}
           auth-code: ${{ github.event.inputs.code }}

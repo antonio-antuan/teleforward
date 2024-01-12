@@ -15,8 +15,8 @@ inputs:
   auth-code:
     required: false
     description: "Authorization code"
-  pat:
-    required: true
+#  pat:
+#    required: true
   image:
     required: true
   server_workdir:
@@ -55,7 +55,7 @@ runs:
       uses: dacbd/create-issue-action@v1.2.1
       if: steps.start_app.outcome != 'success'
       with:
-        token: ${{ inputs.pat }}
+        token: ${{ github.token }}
         title: Authorization needed
         body: |
           # Telegram authorization is needed
