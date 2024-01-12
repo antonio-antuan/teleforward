@@ -72,7 +72,7 @@ jobs:
           # `TELEGRAM_JSON` should be in the format of {"api_id": 123123, "api_hash": "hash", "tdlib_log_verbosity": 1}
           changes: |
             {
-              "telegram": "${{ vars.TELEGRAM_JSON }}",
+              "telegram": ${{ vars.TELEGRAM_JSON }},
               "accounts": ${{ vars.ACCOUNTS_JSON }}
             }
 
