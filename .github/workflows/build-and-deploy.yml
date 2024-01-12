@@ -73,8 +73,8 @@ jobs:
           changes: |
             {
               "config.yml": {
-                "telegram": ${{ vars.TELEGRAM_JSON }},
-                "accounts": ${{ vars.ACCOUNTS_JSON }}
+                "telegram": ${{ secrets.TELEGRAM_JSON }},
+                "accounts": ${{ secrets.ACCOUNTS_JSON }}
               }
             }
 
