@@ -86,7 +86,9 @@ jobs:
           key: ${{ secrets.SERVER_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           # copy docker-compose from the repo
-          script: "[ -f docker-compose.yml ] && docker-compose stop || echo 'docker-compose.yml not found, skipping.'"
+          script: |
+            cd ${{ secrets.SERVER_APP_PATH }}
+            [ -f docker-compose.yml ] && docker-compose stop || echo 'docker-compose.yml not found, skipping.'
 
       - name: copy configs
         id: copy_configs
@@ -116,7 +118,7 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           script: |
             cd ${{ secrets.SERVER_APP_PATH }}
-            export IMAGE=${{ inputs.image_tag }}
+            export IMAGE=${{ env.IMAGE }}
             docker-compose pull
 
       - name: start
