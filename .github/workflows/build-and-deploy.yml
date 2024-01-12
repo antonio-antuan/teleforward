@@ -86,7 +86,7 @@ jobs:
           key: ${{ secrets.SERVER_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           # copy docker-compose from the repo
-          script: docker-compose stop || true
+          script: "[ -f docker-compose.yml ] && docker-compose stop || echo 'docker-compose.yml not found, skipping.'"
 
       - name: copy configs
         id: copy_configs
