@@ -19,6 +19,9 @@ inputs:
     required: true
   image:
     required: true
+  server_workdir:
+    required: true
+    description: "Server working directory"
 
 runs:
 
@@ -35,6 +38,7 @@ runs:
         key: ${{ inputs.server-key }}
         port: ${{ inputs.server-port }}
         script: |
+          cd ${{ inputs.server_workdir }}
           export IMAGE=${{ inputs.image }}
           # we have to stop everything because tdlib cannot run concurrent clients
           docker-compose stop
