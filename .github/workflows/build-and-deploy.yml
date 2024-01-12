@@ -72,8 +72,8 @@ jobs:
           # `TELEGRAM_JSON` should be in the format of {"api_id": 123123, "api_hash": "hash", "tdlib_log_verbosity": 1}
           changes: |
             {
-              "telegram": "${{ secrets.TELEGRAM_JSON }}",
-              "accounts": ${{ secrets.ACCOUNTS_JSON }}
+              "telegram": "${{ vars.TELEGRAM_JSON }}",
+              "accounts": ${{ vars.ACCOUNTS_JSON }}
             }
 
       # stop before copying docker-compose.
