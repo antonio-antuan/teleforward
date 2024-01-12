@@ -115,6 +115,7 @@ jobs:
           key: ${{ secrets.SERVER_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           script: |
+            cd ${{ secrets.SERVER_APP_PATH }}
             export IMAGE=${{ inputs.image_tag }}
             docker-compose pull
 
