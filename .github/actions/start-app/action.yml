@@ -78,7 +78,7 @@ runs:
 
     - name: create an issue
       uses: dacbd/create-issue-action@v1.2.1
-      if: steps.start-app.outcome != 'success'
+      if: steps.start-app.outcome == 'failure'
       with:
         token: ${{ github.token }}
         title: Failed to start app
