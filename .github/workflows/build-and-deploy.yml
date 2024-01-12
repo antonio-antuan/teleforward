@@ -56,7 +56,7 @@ jobs:
 
   prepare_deploy:
 #    needs: [build-with-registry, build-tar]
-    if: ${{ always() && github.event.inputs.deploy == 'true' && contains(join(needs.*.result, ','), 'success') }}
+#    if: ${{ always() && github.event.inputs.deploy == 'true' && contains(join(needs.*.result, ','), 'success') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
