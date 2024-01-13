@@ -10,8 +10,8 @@ jobs:
       - name: Slash Command Dispatch
         uses: peter-evans/slash-command-dispatch@v3
         with:
-          token: ${{ secrets.PAT }}
-          reaction-token: ${{ secrets.PAT }}
+          token: ${{ github.token }}
+          reaction-token: ${{ github.token }}
           issue-type: issue
           dispatch-type: workflow
           commands: auth-code

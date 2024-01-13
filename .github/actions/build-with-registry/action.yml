@@ -12,6 +12,9 @@ inputs:
   image:
     required: true
     description: "Image name"
+  base-image:
+    required: true
+    description: "Base image name"
 
 runs:
 
@@ -31,11 +34,15 @@ runs:
         password: ${{ inputs.registry_password }}
 
     - name: Build and push
-      id: build_and_push
-      uses: docker/build-push-action@v5
-      # get value of check_args
-      with:
-        push: true
-        # pull is just to speedup build via cache
-        pull: true
-        tags: ${{ inputs.image }}
+      id: build-base
+      shell: bash
+      run: |
+        command="docker buildx build --progress plain --output type=registry --tag ${{ inputs.base-image }} --push --file docker/base.dockerfile ."
+        echo $command
+        docker pull ${{ inputs.base-image }} || $command 
+
+    - name: Build and push
+      id: build-app
+      shell: bash
+      run: |
+        docker buildx build --progress plain --output type=registry --tag ${{ inputs.image }} --push --file docker/app.dockerfile .

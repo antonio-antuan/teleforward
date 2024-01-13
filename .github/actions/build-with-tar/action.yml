@@ -21,7 +21,7 @@ runs:
       uses: docker/setup-buildx-action@v3
 
     - name: Build and push
-      id: build_and_push
+      id: build
       uses: docker/build-push-action@v5
       # get value of check_args
       with:

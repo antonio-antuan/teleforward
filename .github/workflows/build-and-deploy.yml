@@ -1,4 +1,6 @@
 name: Build and deploy
+permissions:
+  issues: write
 
 on:
   workflow_dispatch:
@@ -16,10 +18,11 @@ on:
         description: 'Use registry'
         required: false
         type: boolean
-        default: false
+        default: true
 
 env:
-  IMAGE: ${{ secrets.IMAGE_NAME }}:${{ github.event.inputs.image_tag }}
+  IMAGE: ${{ vars.IMAGE_NAME }}:${{ github.event.inputs.image_tag }}
+  BASE_IMAGE: ${{ vars.IMAGE_NAME }}-base:latest
 
 jobs:
   build-with-registry:
@@ -31,9 +34,10 @@ jobs:
         id: build_with_registry
         uses: ./.github/actions/build-with-registry
         with:
-          registry_username: ${{ secrets.REGISTRY_USERNAME }}
-          registry_password: ${{ secrets.REGISTRY_PASSWORD }}
+          registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          registry_password: ${{ secrets.DOCKERHUB_PASSWORD }}
           image: ${{ env.IMAGE }}
+          base-image: ${{env.BASE_IMAGE}}
 
   build-tar:
     if: github.event.inputs.use_registry != 'true'
@@ -64,14 +68,14 @@ jobs:
         uses: fjogeleit/yaml-update-action@v0.13.2
         with:
           commitChange: false
-          # we don't commit, so we can update an example config
-          valueFile: 'config.yml'
           # `ACCOUNTS_JSON` should be in the format of [{"phone": "+9999999999", "file_path": "/home/me/data.md", "tddb_dir": "tddb"}]
           # `TELEGRAM_JSON` should be in the format of {"api_id": 123123, "api_hash": "hash", "tdlib_log_verbosity": 1}
           changes: |
             {
-              "telegram": "${{ secrets.TELEGRAM_JSON }}",
-              "accounts": ${{ secrets.ACCOUNTS_JSON }}
+              "config.yml": {
+                "telegram": ${{ secrets.TELEGRAM_JSON }},
+                "accounts": ${{ secrets.ACCOUNTS_JSON }}
+              }
             }
 
       # stop before copying docker-compose.
@@ -84,7 +88,9 @@ jobs:
           key: ${{ secrets.SERVER_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           # copy docker-compose from the repo
-          script: docker-compose stop
+          script: |
+            cd ${{ secrets.SERVER_APP_PATH }}
+            [ -f docker-compose.yml ] && docker-compose stop && docker-compose rm teleforward || echo 'docker-compose.yml not found, skipping.'
 
       - name: copy configs
         id: copy_configs
@@ -92,7 +98,7 @@ jobs:
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USERNAME }}
-          password: ${{ secrets.SERVER_KEY }}
+          key: ${{ secrets.SERVER_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           source: "config.yml,docker-compose.yml"
           target: ${{ secrets.SERVER_APP_PATH }}
@@ -102,6 +108,7 @@ jobs:
     if: github.event.inputs.deploy == 'true'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
 
       - name: pull image
         id: pull_image
@@ -112,7 +119,8 @@ jobs:
           key: ${{ secrets.SERVER_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           script: |
-            export IMAGE=${{ inputs.image }}
+            cd ${{ secrets.SERVER_APP_PATH }}
+            export IMAGE=${{ env.IMAGE }}
             docker-compose pull
 
       - name: start
@@ -123,7 +131,8 @@ jobs:
           server-username: ${{ secrets.SERVER_USERNAME }}
           server-key: ${{ secrets.SERVER_KEY }}
           server-port: ${{ secrets.SERVER_PORT }}
-          pat: ${{ secrets.PAT }}
+          image: ${{ env.IMAGE }}
+          server_workdir: ${{ secrets.SERVER_APP_PATH }}
 
   deploy_from_tar:
     needs: [build-tar, prepare_deploy]
@@ -132,7 +141,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v3
         with:
           name: image-tar
 
@@ -162,10 +171,9 @@ jobs:
 
       - name: start
         id: start
-        uses: ./.github/actions/start-app
+        uses: ./.github/actions/start-app.yml
         with:
           server-host: ${{ secrets.SERVER_HOST }}
           server-username: ${{ secrets.SERVER_USERNAME }}
           server-key: ${{ secrets.SERVER_KEY }}
           server-port: ${{ secrets.SERVER_PORT }}
-          pat: ${{ secrets.PAT }}
