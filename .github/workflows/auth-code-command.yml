@@ -1,4 +1,4 @@
-name: Auth command
+name: auth-command
 
 env:
   code: ''

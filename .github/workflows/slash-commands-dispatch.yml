@@ -14,4 +14,4 @@ jobs:
           reaction-token: ${{ github.token }}
           issue-type: issue
           dispatch-type: workflow
-          commands: auth-code
+          commands: auth
