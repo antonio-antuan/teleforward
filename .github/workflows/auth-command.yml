@@ -2,6 +2,7 @@ name: auth-command
 
 env:
   code: ''
+  IMAGE: ${{ vars.IMAGE_NAME }}:latest
 
 on:
   workflow_dispatch:
@@ -27,3 +28,5 @@ jobs:
           server-key: ${{ secrets.SERVER_KEY }}
           server-port: ${{ secrets.SERVER_PORT }}
           auth-code: ${{ github.event.inputs.code }}
+          image: ${{ env.IMAGE }}
+          server_workdir: ${{ secrets.SERVER_APP_PATH }}

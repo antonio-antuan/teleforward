@@ -177,3 +177,5 @@ jobs:
           server-username: ${{ secrets.SERVER_USERNAME }}
           server-key: ${{ secrets.SERVER_KEY }}
           server-port: ${{ secrets.SERVER_PORT }}
+          image: ${{ env.IMAGE }}
+          server_workdir: ${{ secrets.SERVER_APP_PATH }}
