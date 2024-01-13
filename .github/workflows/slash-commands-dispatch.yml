@@ -2,8 +2,10 @@ name: Slash Command Dispatch
 on:
   issue_comment:
     types: [created]
+
 permissions:
-  issues: write
+  issues: write  # For doing the emoji reaction on an issue comment
+  contents: write  # For executing the workflow_dispatch event
 
 jobs:
   slashCommandDispatch:
