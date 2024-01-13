@@ -25,40 +25,40 @@ env:
   BASE_IMAGE: ${{ vars.IMAGE_NAME }}-base:latest
 
 jobs:
-#  build-with-registry:
-#    if: github.event.inputs.use_registry == 'true'
-#    runs-on: ubuntu-latest
-#    steps:
-#      - uses: actions/checkout@v3
-#      - name: build with registry
-#        id: build_with_registry
-#        uses: ./.github/actions/build-with-registry
-#        with:
-#          registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
-#          registry_password: ${{ secrets.DOCKERHUB_PASSWORD }}
-#          image: ${{ env.IMAGE }}
-#          base-image: ${{env.BASE_IMAGE}}
-#
-#  build-tar:
-#    if: github.event.inputs.use_registry != 'true'
-#    runs-on: ubuntu-latest
-#    steps:
-#      - uses: actions/checkout@v3
-#      - name: build tar
-#        id: build_tar
-#        uses: ./.github/actions/build-with-tar
-#        with:
-#          image: ${{ env.IMAGE }}
-#          dest: image.tar
-#
-#      - uses: actions/upload-artifact@v3.1.3
-#        with:
-#          name: image-tar
-#          path: image.tar
+  build-with-registry:
+    if: github.event.inputs.use_registry == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: build with registry
+        id: build_with_registry
+        uses: ./.github/actions/build-with-registry
+        with:
+          registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          registry_password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          image: ${{ env.IMAGE }}
+          base-image: ${{env.BASE_IMAGE}}
+
+  build-tar:
+    if: github.event.inputs.use_registry != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: build tar
+        id: build_tar
+        uses: ./.github/actions/build-with-tar
+        with:
+          image: ${{ env.IMAGE }}
+          dest: image.tar
+
+      - uses: actions/upload-artifact@v3.1.3
+        with:
+          name: image-tar
+          path: image.tar
 
   prepare_deploy:
-#    needs: [build-with-registry, build-tar]
-#    if: ${{ always() && github.event.inputs.deploy == 'true' && contains(join(needs.*.result, ','), 'success') }}
+    needs: [build-with-registry, build-tar]
+    if: ${{ always() && github.event.inputs.deploy == 'true' && contains(join(needs.*.result, ','), 'success') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -104,8 +104,7 @@ jobs:
           target: ${{ secrets.SERVER_APP_PATH }}
 
   deploy_from_registry:
-    needs: [prepare_deploy]
-#    needs: [build-with-registry, prepare_deploy]
+    needs: [build-with-registry, prepare_deploy]
     if: github.event.inputs.deploy == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -132,51 +131,49 @@ jobs:
           server-username: ${{ secrets.SERVER_USERNAME }}
           server-key: ${{ secrets.SERVER_KEY }}
           server-port: ${{ secrets.SERVER_PORT }}
-#          pat: ${{ secrets.PAT }}
           image: ${{ env.IMAGE }}
           server_workdir: ${{ secrets.SERVER_APP_PATH }}
 
-#  deploy_from_tar:
-#    needs: [build-tar, prepare_deploy]
-#    if: github.event.inputs.deploy == 'true'
-#    runs-on: ubuntu-latest
-#    steps:
-#      - uses: actions/checkout@v3
-#
-#      - uses: actions/download-artifact@v3
-#        with:
-#          name: image-tar
-#
-#      - name: copy image tar
-#        id: copy_image_tar
-#        uses: appleboy/scp-action@v0.1.4
-#        with:
-#          host: ${{ secrets.SERVER_HOST }}
-#          username: ${{ secrets.SERVER_USERNAME }}
-#          password: ${{ secrets.SERVER_KEY }}
-#          port: ${{ secrets.SERVER_PORT }}
-#          source: "image.tar"
-#          target: ${{ secrets.SERVER_APP_PATH }}
-#
-#      - name: load image from dag
-#        id: load_image_from_tar
-#        uses: appleboy/ssh-action@v1.0.0
-#        with:
-#          host: ${{ secrets.SERVER_HOST }}
-#          username: ${{ secrets.SERVER_USERNAME }}
-#          key: ${{ secrets.SERVER_KEY }}
-#          port: ${{ secrets.SERVER_PORT }}
-#          script: |
-#            cd ${{ secrets.SERVER_APP_PATH }}
-#            docker load -i image.tar
-#            rm image.tar
-#
-#      - name: start
-#        id: start
-#        uses: ./.github/actions/start-app.yml
-#        with:
-#          server-host: ${{ secrets.SERVER_HOST }}
-#          server-username: ${{ secrets.SERVER_USERNAME }}
-#          server-key: ${{ secrets.SERVER_KEY }}
-#          server-port: ${{ secrets.SERVER_PORT }}
-#          pat: ${{ secrets.PAT }}
+  deploy_from_tar:
+    needs: [build-tar, prepare_deploy]
+    if: github.event.inputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: image-tar
+
+      - name: copy image tar
+        id: copy_image_tar
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          password: ${{ secrets.SERVER_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "image.tar"
+          target: ${{ secrets.SERVER_APP_PATH }}
+
+      - name: load image from dag
+        id: load_image_from_tar
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            cd ${{ secrets.SERVER_APP_PATH }}
+            docker load -i image.tar
+            rm image.tar
+
+      - name: start
+        id: start
+        uses: ./.github/actions/start-app.yml
+        with:
+          server-host: ${{ secrets.SERVER_HOST }}
+          server-username: ${{ secrets.SERVER_USERNAME }}
+          server-key: ${{ secrets.SERVER_KEY }}
+          server-port: ${{ secrets.SERVER_PORT }}
