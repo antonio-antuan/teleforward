@@ -52,7 +52,7 @@ runs:
           export IMAGE=${{ inputs.image }}
           cd ${{ inputs.server_workdir }}
           phone=$(docker-compose logs teleforward | grep 'auth code is needed for' | tail -1 | awk '{print $NF}')
-          timeout --signal SIGKILL 10s docker-compose run teleforward init $phone:${{ inputs.auth-code }}
+          timeout --signal SIGKILL 10s docker-compose run teleforward /config.yml init $phone:${{ inputs.auth-code }}
 
     - name: start app
       id: start-app
