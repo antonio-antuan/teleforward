@@ -1,5 +1,8 @@
 name: auth-command
 
+permissions:
+  issues: write
+
 env:
   code: ''
   IMAGE: ${{ vars.IMAGE_NAME }}:latest
