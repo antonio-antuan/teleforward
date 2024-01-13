@@ -6,6 +6,9 @@ on:
 permissions:
   issues: write  # For doing the emoji reaction on an issue comment
   contents: write  # For executing the workflow_dispatch event
+  actions: write
+  deployments: write
+  repository-projects: write
 
 jobs:
   slashCommandDispatch:
