@@ -20,7 +20,7 @@ jobs:
 
       - name: auth and start
         id: auth-and-start
-        uses: ./.github/actions/start-app.yml
+        uses: ./.github/actions/start-app
         with:
           server-host: ${{ secrets.SERVER_HOST }}
           server-username: ${{ secrets.SERVER_USERNAME }}

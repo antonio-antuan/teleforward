@@ -15,8 +15,6 @@ inputs:
   auth-code:
     required: false
     description: "Authorization code"
-#  pat:
-#    required: true
   image:
     required: true
   server_workdir:

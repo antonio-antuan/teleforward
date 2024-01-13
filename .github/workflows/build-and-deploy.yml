@@ -29,7 +29,7 @@ jobs:
 #    if: github.event.inputs.use_registry == 'true'
 #    runs-on: ubuntu-latest
 #    steps:
-#      - uses: actions/checkout@v2
+#      - uses: actions/checkout@v3
 #      - name: build with registry
 #        id: build_with_registry
 #        uses: ./.github/actions/build-with-registry
@@ -43,7 +43,7 @@ jobs:
 #    if: github.event.inputs.use_registry != 'true'
 #    runs-on: ubuntu-latest
 #    steps:
-#      - uses: actions/checkout@v2
+#      - uses: actions/checkout@v3
 #      - name: build tar
 #        id: build_tar
 #        uses: ./.github/actions/build-with-tar
@@ -143,7 +143,7 @@ jobs:
 #    steps:
 #      - uses: actions/checkout@v3
 #
-#      - uses: actions/download-artifact@v2
+#      - uses: actions/download-artifact@v3
 #        with:
 #          name: image-tar
 #
