@@ -9,6 +9,14 @@ permissions:
   actions: write
   deployments: write
   repository-projects: write
+  checks: write
+  discussions: write
+  id-token: write
+  packages: write
+  pages: write
+  pull-requests: write
+  security-events: write
+  statuses: write
 
 jobs:
   slashCommandDispatch:
